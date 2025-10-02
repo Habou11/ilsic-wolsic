@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>일식·월식 시뮬레이터</title>
+<style>
+body {
+  margin: 0; padding: 20px;
+  background: linear-gradient(135deg, #0c0c2e 0%, #1a1a4a 100%);
+  font-family: 'Arial', sans-serif; color: white; min-height: 100vh;
+}
+.container { max-width: 1200px; margin: 0 auto; }
+h1 { text-align: center; margin-bottom: 30px; text-shadow: 0 0 20px rgba(255,255,255,.5); }
+.simulator-container { background: rgba(0,0,0,.3); border-radius: 15px; padding:20px; margin-bottom:20px; box-shadow:0 0 30px rgba(255,255,255,.1);}
+.canvas-container { position: relative; margin-bottom:20px;}
+#canvas { border:2px solid rgba(255,255,255,.3); border-radius:10px; background: radial-gradient(ellipse at center, #0a0a2e 0%, #000 100%); display:block; margin:0 auto;}
+.controls { display:grid; grid-template-columns: repeat(auto-fit,minmax(300px,1fr)); gap:20px; margin-bottom:20px;}
+.control-group { background: rgba(255,255,255,.1); padding:15px; border-radius:10px; backdrop-filter: blur(10px);}
+.control-group h3 { margin-top:0; color:#ffd700; text-shadow:0 0 10px rgba(255,215,0,.5);}
+.control-item { margin-bottom:15px;}
+label { display:block; margin-bottom:5px; font-weight:bold;}
+input[type=range]{width:100%; height:6px; border-radius:3px; background:rgba(255,255,255,.2); outline:none;}
+input[type=range]::-webkit-slider-thumb{width:20px; height:20px; border-radius:50%; background:#ffd700; cursor:pointer; box-shadow:0 0 10px rgba(255,215,0,.8);}
+input[type=range]::-moz-range-thumb{width:20px;height:20px;border-radius:50%;background:#ffd700;cursor:pointer;border:none;box-shadow:0 0 10px rgba(255,215,0,.8);}
+.preset-buttons{display:flex; gap:10px; flex-wrap:wrap; justify-content:center;}
+button{padding:10px 20px; border:none; border-radius:25px; background:linear-gradient(45deg,#ff6b6b,#ff8e53); color:white; font-weight:bold; cursor:pointer; transition:.3s; box-shadow:0 4px 15px rgba(255,107,107,.3);}
+button:hover{transform:translateY(-2px); box-shadow:0 6px 20px rgba(255,107,107,.5);}
+.info-panel{background:rgba(255,255,255,.1); padding:15px; border-radius:10px; backdrop-filter: blur(10px); text-align:center;}
+.eclipse-type{font-size:24px; font-weight:bold; margin-bottom:10px; text-shadow:0 0 15px currentColor;}
+.eclipse-description{font-size:16px; line-height:1.4; opacity:.9;}
+.legend{display:flex; justify-content:center; gap:20px; margin-top:15px; flex-wrap:wrap;}
+.legend-item{display:flex; align-items:center; gap:8px; font-size:12px;}
+.legend-circle{width:16px; height:16px; border-radius:50%; box-shadow:0 0 8px currentColor;}
+@media(max-width:768px){.controls{grid-template-columns:1fr;} .preset-buttons{flex-direction:column;} .legend{flex-direction:column; align-items:center; gap:10px;}}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>🌞 일식·월식 시뮬레이터 🌙</h1>
+<div class="simulator-container">
+  <div class="canvas-container">
+    <canvas id="canvas" width="800" height="400"></canvas>
+  </div>
+  <div class="controls">
+    <div class="control-group">
+      <h3>🌙 달의 위치</h3>
+      <div class="control-item">
+        <label for="moonAngle">각도 (도): <span id="moonAngleValue">0</span></label>
+        <input type="range" id="moonAngle" min="0" max="360" value="0">
+      </div>
+      <div class="control-item">
+        <label for="moonDistance">거리: <span id="moonDistanceValue">120</span></label>
+        <input type="range" id="moonDistance" min="80" max="160" value="120">
+      </div>
+    </div>
+    <div class="control-group">
+      <h3>⚙️ 시뮬레이션 설정</h3>
+      <div class="control-item">
+        <label for="animationSpeed">달 공전 속도: <span id="animationSpeedValue">정지</span></label>
+        <input type="range" id="animationSpeed" min="0" max="3" step="0.5" value="0">
+      </div>
+    </div>
+  </div>
+  <div class="preset-buttons">
+    <button onclick="setSolarEclipse()">🌑 개기일식</button>
+    <button onclick="setLunarEclipse()">🌕 개기월식</button>
+    <button onclick="setPartialSolarEclipse()">🌓 부분일식</button>
+    <button onclick="setPartialLunarEclipse()">🌖 부분월식</button>
+    <button onclick="toggleAnimation()" id="playButton">▶️ 재생</button>
+    <button onclick="resetPositions()">🔄 초기화</button>
+  </div>
+  <div class="info-panel">
+    <div class="eclipse-type" id="eclipseType">일반 상태</div>
+    <div class="eclipse-description" id="eclipseDescription">태양, 지구, 달이 일직선상에 있지 않은 평상시 상태입니다.</div>
+    <div class="legend">
+      <div class="legend-item"><div class="legend-circle" style="background:#ffd700;"></div><span>태양</span></div>
+      <div class="legend-item"><div class="legend-circle" style="background:#4a90e2;"></div><span>지구</span></div>
+      <div class="legend-item"><div class="legend-circle" style="background:#c0c0c0;"></div><span>달</span></div>
+    </div>
+  </div>
+</div>
+</div>
+<script>
+const canvas=document.getElementById("canvas"),ctx=canvas.getContext("2d");
+let moonAngle=0,moonDistance=120,animationSpeed=0,animationId;
+const sun={x:100,y:200,radius:30},earth={x:400,y:200,radius:25};
+
+function updateSliderValues(){
+  document.getElementById("moonAngleValue").textContent=moonAngle;
+  document.getElementById("moonDistanceValue").textContent=moonDistance;
+  document.getElementById("animationSpeedValue").textContent=animationSpeed===0?"정지":animationSpeed+"x";
+}
+
+document.getElementById("moonAngle").addEventListener("input",e=>{moonAngle=parseInt(e.target.value);updateSliderValues();draw()});
+document.getElementById("moonDistance").addEventListener("input",e=>{moonDistance=parseInt(e.target.value);updateSliderValues();draw()});
+document.getElementById("animationSpeed").addEventListener("input",e=>{
+  animationSpeed=parseFloat(e.target.value);
+  updateSliderValues();
+  document.getElementById("playButton").textContent=animationSpeed>0?"⏸️ 일시정지":"▶️ 재생";
+});
+
+function getMoonPosition(){
+  const rad=moonAngle*Math.PI/180;
+  return {x:earth.x+Math.cos(rad)*moonDistance, y:earth.y+Math.sin(rad)*moonDistance};
+}
+
+// 🌙 달 그리기 (그림자 제거 + 월식 시 붉게)
+function drawMoon(x,y,radius){
+  const eclipse=detectEclipse();
+  let color="#c0c0c0"; 
+  if(eclipse.type==="total_lunar") color="#ff4444";
+  if(eclipse.type==="partial_lunar") color="#ff7777";
+
+  ctx.fillStyle=color;
+  ctx.beginPath();
+  ctx.arc(x,y,radius,0,Math.PI*2); ctx.fill();
+
+  // 간단 크레이터
+  ctx.fillStyle="rgba(80,80,80,0.6)";
+  ctx.beginPath();
+  ctx.arc(x-5,y-4,2,0,Math.PI*2);
+  ctx.arc(x+6,y+3,1.5,0,Math.PI*2);
+  ctx.arc(x-3,y+5,1,0,Math.PI*2);
+  ctx.fill();
+}
+
+function drawBody(x,y,radius,color,glow=true){
+  if(glow){
+    const grad=ctx.createRadialGradient(x,y,0,x,y,2*radius);
+    grad.addColorStop(0,color); grad.addColorStop(.7,color); grad.addColorStop(1,"transparent");
+    ctx.fillStyle=grad;
+    ctx.fillRect(x-2*radius,y-2*radius,4*radius,4*radius);
+  }
+  ctx.fillStyle=color;
+  ctx.beginPath();
+  ctx.arc(x,y,radius,0,2*Math.PI);
+  ctx.fill();
+}
+
+function detectEclipse(){
+  const moon=getMoonPosition();
+  const t=Math.atan2(earth.y-sun.y,earth.x-sun.x);
+  const a=Math.atan2(moon.y-earth.y,moon.x-earth.x);
+  let diff=Math.abs(t-a); diff=Math.min(diff,2*Math.PI-diff);
+  if(diff<.25) return moon.x>earth.x?{type:"total_lunar",name:"🌕 개기월식",description:"달이 지구 그림자에 들어 붉게 보입니다."}:{type:"total_solar",name:"🌑 개기일식",description:"달이 태양을 완전히 가립니다."};
+  if(diff<.5) return moon.x>earth.x?{type:"partial_lunar",name:"🌖 부분월식",description:"달 일부가 지구 그림자에 들어갑니다."}:{type:"partial_solar",name:"🌓 부분일식",description:"달 일부가 태양을 가립니다."};
+  return {type:"normal",name:"일반 상태",description:"태양, 지구, 달이 일직선상에 있지 않은 평상시 상태입니다."};
+}
+
+function updateInfo(){
+  const e=detectEclipse();
+  document.getElementById("eclipseType").textContent=e.name;
+  document.getElementById("eclipseDescription").textContent=e.description;
+  const colors={total_solar:"#ff2222",total_lunar:"#cc4444",partial_solar:"#ff8844",partial_lunar:"#ffaa66",normal:"#ffd700"};
+  document.getElementById("eclipseType").style.color=colors[e.type];
+}
+
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  const moon=getMoonPosition();
+
+  // 별
+  ctx.fillStyle="rgba(255,255,255,.3)";
+  for(let i=0;i<40;i++){ctx.beginPath();ctx.arc(137*i%canvas.width,197*i%canvas.height,1,0,2*Math.PI);ctx.fill();}
+
+  // 궤도
+  ctx.strokeStyle="rgba(255,255,255,.2)";
+  ctx.lineWidth=1; ctx.setLineDash([5,5]);
+  ctx.beginPath(); ctx.arc(earth.x,earth.y,moonDistance,0,2*Math.PI); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // 태양 & 지구
+  drawBody(sun.x,sun.y,sun.radius,"#ffd700",true);
+  drawBody(earth.x,earth.y,earth.radius,"#4a90e2",true);
+
+  // 대륙 색
+  ctx.fillStyle="#2d5016"; ctx.beginPath(); ctx.arc(earth.x-8,earth.y-8,6,0,2*Math.PI); ctx.fill();
+  ctx.fillStyle="#4a7c59"; ctx.beginPath(); ctx.arc(earth.x+6,earth.y+5,8,0,2*Math.PI); ctx.fill();
+
+  // 달
+  drawMoon(moon.x,moon.y,12);
+
+  updateInfo();
+}
+
+function animate(){
+  moonAngle = (moonAngle - animationSpeed + 360) % 360; // ← 반시계, 시계 반대
+  updateSliderValues();
+  draw();
+  animationId=requestAnimationFrame(animate);
+}
+
+function toggleAnimation(){animationId?(cancelAnimationFrame(animationId),animationId=null,document.getElementById("playButton").textContent="▶️ 재생"):(animate(),document.getElementById("playButton").textContent="⏸️ 일시정지")}
+function resetPositions(){moonAngle=0;moonDistance=120;animationSpeed=0;document.getElementById("moonAngle").value=0;document.getElementById("moonDistance").value=120;document.getElementById("animationSpeed").value=0;updateSliderValues();draw();}
+function setSolarEclipse(){moonAngle=0;moonDistance=120;document.getElementById("moonAngle").value=0;draw();}
+function setLunarEclipse(){moonAngle=180;moonDistance=120;document.getElementById("moonAngle").value=180;draw();}
+function setPartialSolarEclipse(){moonAngle=10;moonDistance=120;document.getElementById("moonAngle").value=10;draw();}
+function setPartialLunarEclipse(){moonAngle=170;moonDistance=120;document.getElementById("moonAngle").value=170;draw();}
+
+updateSliderValues(); draw();
+</script>
+</body>
+</html>
